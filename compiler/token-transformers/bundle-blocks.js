@@ -8,10 +8,16 @@ function bundleIndentLevel(lines, i) {
 	var lastWasBlock = false;
 
 	while (i < lines.length && lines[i].indent >= level) {
-		if (lines[i].indent > level) {
+		if (lines[i][0] === "else") {
+			var prev = sequence[sequence.length - 1];
+			prev.push.apply(prev, lines[i]);
+			lastWasBlock = false;
+			i += 1;
+		}
+		else if (lines[i].indent > level) {
 			if (lastWasBlock) {
 				throw SyntaxError("Unexpected indentation level at line: "
-					+ lines[i].join(" "))
+					+ lines[i].join(" "));
 			}
 			var block = bundleIndentLevel(lines, i);
 			sequence[sequence.length - 1].push(block.sequence);
@@ -19,13 +25,7 @@ function bundleIndentLevel(lines, i) {
 			i = block.lineNum;
 		}
 		else {
-			if (lines[i][0] === "else") {
-				var prev = sequence[sequence.length - 1];
-				prev.push.apply(prev, lines[i]);
-			}
-			else {
-				sequence.push(lines[i]);
-			}
+			sequence.push(lines[i]);
 			lastWasBlock = false;
 			i += 1;
 		}

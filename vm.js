@@ -14,13 +14,13 @@ fs.readFile(inputFile, "utf8", function (err, source) {
 		var parser = require("./lang.js");
 		code = parser.parse(source);
 	}
-	out("returned " + evl(code));
+	out("returned ", evl(code));
 	//out("returned " + evl(["print", ["List"]]));
 });
 
-function out (s) {
-	console.log("VM: " + s);
-	return s;
+function out () {
+	var args = Array.prototype.slice.call(arguments);
+	console.log.apply(console, ["VM:"].concat(args));
 }
 
 function cloneArray (arr) {
@@ -129,19 +129,22 @@ var globalNS = {
 		var func = function (args) {
 			var callingFunction = currentFunction;
 			currentFunction = func;
+			// save calling scope to return to after the function call
 			var oldScopes = scopes;
+			var tcoCount = 0;
 			do {
-				tailCall = false;
+				//console.log("TCO Count:", tcoCount++);
 				scopes = func.closure;
 				scopes.push({});
 				for (var i = 0; i < argNames.length; i++) {
+					//console.log(argNames[i], "=", args[i]);
 					assignVariable([argNames[i], args[i]], "declaration", "don't eval");
 				}
 				var result = evl(body, true);
 				scopes.pop();
 				// for next iteration of TCO
 				args = result;
-			} while (tailCall);
+			} while (args instanceof Array && args.tailCall);
 			scopes = oldScopes;
 			currentFunction = callingFunction;
 			return result;
@@ -163,7 +166,6 @@ var globalNS = {
 		}
 		return list;
 	},
-	"//": function () {},
 	head: function (args) {
 		return args[0].head;
 	},
@@ -201,7 +203,6 @@ var globalNS = {
 	"->",
 	"List:compose",
 	"ensure",
-	"//",
 	"do"
 ].forEach(function (command) {
 	globalNS[command].dontEval = true;
@@ -329,13 +330,14 @@ function evl (exp, inTailPosition) {
 			for (var i = 1; i < exp.length; i++) {
 				args.push(evl(exp[i]));
 			}
-			if (inTailPosition && false) { // DISABLED TCO
+			if (inTailPosition) {
 				// return arguments for tail call
 				if (func == currentFunction) {
-					tailCall = true;
+					//out("recur", exp[0], args);
+					args.tailCall = true;
 					return args;
 				}
-				else if (exp[0] = "if") {
+				else if (exp[0] === "if") {
 					return func(args, inTailPosition);
 				}
 			}

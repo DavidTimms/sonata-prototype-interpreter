@@ -40,7 +40,7 @@ def repeat_char (n, chr, str) ->
 	else: str
 
 // big recursive call does not overflow the stack
-//repeat_char(100000, "i", "")
+repeat_char(100000, "i", "")
 
 // not tail-call optimised
 def fibonacci (n) ->
@@ -49,9 +49,7 @@ def fibonacci (n) ->
 ensure(fibonacci(11) == 89)
 
 def join ([first|rest]) ->
-	first ++ 
-		if rest == []: '' 
-		else: ' ' ++ join(rest)
+	first ++ (if rest: ' ' ++ join(rest) else: '')
 
 ensure(join(['Hello', 'world', 'foo', 'bar']) == 'Hello world foo bar')
 

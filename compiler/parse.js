@@ -79,7 +79,7 @@ function notComma(token) {
 rule("sequence", [rep1(isArray)], function (lines) {
 	return ["do"].concat(lines.map(function (line) {
 		var parsed = parse.expression(line, 0);
-		if (parsed) {
+		if (parsed && parsed.newPos === line.length) {
 			//console.log("LINE:", parsed.result);
 			return parsed.result;
 		}
