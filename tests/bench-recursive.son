@@ -2,14 +2,14 @@ let elapsed = timer()
 
 let max = 100000
 
-let loop = (i a b c max) ->
+let loop = (i, a, b, c, max) ->
 	let next_a = a + b + i
 	if i < max:
-		loop((i + 1) next_a (next_a * 5678 * i) (i * i) max)
+		loop((i + 1), next_a, (next_a * 5678 * i), (i * i), max)
 	else:
 		a
 
-let result = loop(0 0 0 0 max)
+let result = loop(0, 0, 0, 0, max)
 
 print(elapsed())
 result

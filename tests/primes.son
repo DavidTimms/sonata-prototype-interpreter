@@ -2,8 +2,8 @@
 let a = ->
     var primeNumbers = []
     var i = 1
-    while i < 100000:
-        if !(i % 1000): print(i)
+    while i < 1000:
+        if !(i % 100): print(i)
         i = i + 1
         var result = false
         var primes = primeNumbers
@@ -18,7 +18,7 @@ let a = ->
     primeNumbers
 
 print('======')
-print('MyLang')
+print('Sonata')
 print('======')
 let elapsed = timer()
 let resp = a()
