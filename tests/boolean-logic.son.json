@@ -1,0 +1,1 @@
+["do",["let","x",true],["let","y",false],["ensure",["==",["!","x"],false]],["ensure",["==",["||","x","y"],true]],["ensure",["!=",["&&","x","y"],true]],["ensure",["==",["!",["||","x","y"]],false]],["ensure",["!=",["&&","x",["!","y"]],false]],"'all tests passed'"]

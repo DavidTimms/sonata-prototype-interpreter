@@ -1,0 +1,41 @@
+
+var x = 5
+
+if x > 2:
+	x = 8
+ensure(x == 8)
+
+let elif = if x > 10: true else: false
+ensure(elif == false)
+
+let res = while x < 12: x = x + 1
+ensure(res == 12)
+ensure(x == 12)
+
+// do block has its own scope
+var masked = 5
+do:
+	var masked = 45
+	ensure(masked == 45)
+ensure(masked == 5)
+
+var ys = []
+
+for y in [1, 2, 3, 4, 5, 6]:
+	let new_list = [y | ys]
+	ys = new_list
+ensure(ys == [6, 5, 4, 3, 2, 1])
+
+// index:value syntax
+for i:value in [0, 1, 2, 3, 4, 5, 6]:
+	ensure(i == value)
+
+// for in method of mapping over a list
+let mapped = for greeting in ['hi', 'hello', 'bye']: greeting ++ '!'
+ensure(mapped == ['hi!', 'hello!', 'bye!'])
+
+// recursive functional method of mapping over a list
+let exclaim = ([h|t]) -> [h ++ '!' | if t: exclaim(t) else: []]
+ensure(mapped == exclaim(['hi', 'hello', 'bye']))
+
+'all tests passed'

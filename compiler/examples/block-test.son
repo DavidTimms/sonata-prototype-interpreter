@@ -1,0 +1,6 @@
+
+read_file("hello.txt", (content) ->
+	let loud = uppercase(content) ++ 
+		"!"
+	print(loud)
+)

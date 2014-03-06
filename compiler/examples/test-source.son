@@ -1,0 +1,47 @@
+print('Hello', 'World!')
+var x
+let y = 34 + 56
+def square (x) ->
+	x * x
+x = square(y)
+x = if !x > 1000: 
+	49 
+else: 
+	9999
+
+def hypot (a, b) ->
+	sqrt(a^2 + b^2) 
+
+while y < 8989: y += -1
+
+for cat in if true: cats else: dogs:
+	print(cat)
+
+[a + b, (x) -> x * x | c]
+
+map(xs, (x) -> x * x)
+
+def moo ->
+	print('moooooo')
+
+def fibonacci:
+	(0) -> 0
+	(1) -> 1
+	(x) -> 
+		fibonacci(x - 1) + fibonacci(x - 2)
+
+[a, b] = [12, 2]
+[head | tail] = [1, 2, 3]
+
+
+// Logic programming extension
+//def odd:
+//	(a) <- 
+//		Int(a)
+//		a >= 0
+//		a <= 10
+//		a % 2 == 0
+//
+//odd(3) // true
+//odd(6) // false
+//findall(odd) // [{a: 1}, {a: 3}, {a: 5}, {a: 7}, {a: 9}]

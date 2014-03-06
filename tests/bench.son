@@ -1,0 +1,16 @@
+let elapsed = timer()
+
+var i = 0
+var a = 0
+var b = 0
+var c = 0
+let max = 100000
+
+while i < max:
+	a = a + b + i
+	b = a * 5678 * i
+	c = i * i
+	i = i + 1
+
+print(elapsed())
+a

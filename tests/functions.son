@@ -1,0 +1,58 @@
+
+def add (a, b) -> a + b
+ensure(add(2, 5) == 2 + 5)
+
+// masked in function scope by argument
+var x = 45
+
+def create_power (x) ->
+	// return a function closing over the x argument
+	(y) -> y^x
+
+let cube = create_power(3)
+ensure(cube(5) == 5^3)
+
+// ensure that global x is unchanged
+ensure(x == 45)
+
+// keep total in a mutable hidden variable accessible via closure
+def counter ->
+	var total = 0
+	(extra) ->
+		total = total + extra
+		total
+
+let increase = counter()
+ensure(increase(5) == 5)
+ensure(increase(12) == 17)
+ensure(increase(2) == 19)
+
+// Tail call optimisation
+def factorial (x, acc) ->
+	if x <= 0:
+		acc
+	else:
+		factorial((x - 1), (if acc: acc * x else: x))
+ensure(factorial(5) == 120)
+
+def repeat_char (n, chr, str) ->
+	if n > 0: repeat_char((n - 1), chr, (str ++ chr))
+	else: str
+
+// big recursive call does not overflow the stack
+//repeat_char(100000, "i", "")
+
+// not tail-call optimised
+def fibonacci (n) ->
+	if n < 2: n
+	else: fibonacci(n - 1) + fibonacci(n - 2)
+ensure(fibonacci(11) == 89)
+
+def join ([first|rest]) ->
+	first ++ 
+		if rest == []: '' 
+		else: ' ' ++ join(rest)
+
+ensure(join(['Hello', 'world', 'foo', 'bar']) == 'Hello world foo bar')
+
+'all tests passed'

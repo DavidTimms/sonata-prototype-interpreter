@@ -1,0 +1,14 @@
+// no inheritance to keep thing simple
+// constructors are just functions which create an object literal
+def Person (name, age, gender) -> {
+	name: name
+	age: age
+	gender: gender
+	is_adult: ->
+		self.age >= 18
+	say_hello_to: (other) ->
+		print('Hello $(other), my name is $(self.name)')
+}
+
+let dave = Person('Dave', 21, 'Male')
+dave.say_hello_to('Jim') // => 'Hello Jim, my name is Dave'

@@ -1,0 +1,49 @@
+<html>
+<head>
+<style type="text/css">
+  html, body {
+    margin: 0px;
+    padding: 0px;
+  }
+  #container {
+    max-width: 100%;
+    height: 100%;
+    margin: auto;
+  }
+</style>
+</head>
+<body>
+<div id="container"></div>
+<script src="sigma/sigma.min.js"></script>
+<script src="ast-to-graph.js"></script>
+<script>
+  var dataRequest = new XMLHttpRequest();
+  dataRequest.onload = function (res) {
+    //var data = JSON.parse(response);
+    var trans = 'rgba(0,0,0,0)';
+    var data = JSON.parse(res.target.response);
+    var sigmaGraph = new sigma({
+      renderers: [{
+        container: document.getElementById('container'),
+        type: 'canvas'
+      }],
+      graph: astToGraph(data),
+      settings: {
+        defaultNodeColor: '#228899',
+        sideMargin: 0.3,
+        defaultLabelSize: 18,
+        labelThreshold: 10,
+        minNodeSize: 0.5,
+        defaultHoverLabelBGColor: trans,
+        defaultLabelHoverColor: trans,
+        labelHoverShadowColor: trans
+      }
+    });
+  };
+  dataRequest.open("get", '../test-source.lang.json', true);
+  dataRequest.send();
+
+
+</script>
+</body>
+</html>
