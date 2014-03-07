@@ -31,6 +31,11 @@ function cloneArray (arr) {
 	return clone;
 }
 
+function Message (type, data) {
+	this.type = type;
+	this.data = data;
+}
+
 var globalNS = {
 	print: function (args) {
 		var s = args.join(" ");
@@ -39,13 +44,18 @@ var globalNS = {
 	},
 	"do": function (args, functionBody) {
 		scopes.push({});
+		var result;
 		// evaluate each expression in the block
 		for (var i = 0; i < args.length - 1; i++) {
-			evl(args[i]);
+			result = evl(args[i]);
+			if (result instanceof Message) {
+				scopes.pop();
+				return result;
+			}
 		}
-		var last = evl(args[i], functionBody);
+		result = evl(args[i], functionBody);
 		scopes.pop();
-		return last;
+		return result;
 	},
 	"var": function (args) {
 		return assignVariable(args, "declaration");
@@ -88,10 +98,22 @@ var globalNS = {
 		var result = false;
 		while (evl(args[0])) {
 			result = evl(args[1]);
+			if (result instanceof Message) {
+				if (result.type === "break") {
+					return result.data;
+				}
+				else if (result.type === "next") {
+					result = result.data;
+				}
+				else if (result.type === "return") {
+					return result;
+				}
+			}
 		}
 		return result;
 	},
 	"for": function (args) {
+		var result;
 		var results = [];
 		var current = list = evl(args[1]);
 		var indexName, valueName;
@@ -116,12 +138,36 @@ var globalNS = {
 			}
 			scopes.push(loopScope);
 			// push loop
-			results.push(evl(args[2]));
+			result = evl(args[2]);
+			if (result instanceof Message) {
+				if (result.type === "break") {
+					results.push(result.data);
+					scopes.pop();
+					break;
+				}
+				else if (result.type === "return") {
+					scopes.pop();
+					return result.data;
+				}
+				else if (result.type === "next") {
+					result = result.data;
+				}
+			}
+			results.push(result);
 			scopes.pop();
 			current = current.tail;
 		}
 		var resultList = List.fromArray(results);
 		return resultList;
+	},
+	"break": function (args) {
+		return new Message("break", args[0]);
+	},
+	"return": function (args) {
+		return new Message("return", args[0]);
+	},
+	"next": function (args) {
+		return new Message("next", args[0]);
 	},
 	"->": function (funcDef) {
 		var argNames = funcDef[0];
@@ -143,8 +189,17 @@ var globalNS = {
 				var result = evl(body, true);
 				scopes.pop();
 				// for next iteration of TCO
-				args = result;
-			} while (args instanceof Array && args.tailCall);
+				if (result instanceof Message) {
+					if (result.type === "tailCall") {
+						args = result.data;
+						continue;
+					}
+					if (result.type === "return") {
+						result = result.data;
+					}
+				}
+				break;
+			} while (true);
 			scopes = oldScopes;
 			currentFunction = callingFunction;
 			return result;
@@ -333,9 +388,7 @@ function evl (exp, inTailPosition) {
 			if (inTailPosition) {
 				// return arguments for tail call
 				if (func == currentFunction) {
-					//out("recur", exp[0], args);
-					args.tailCall = true;
-					return args;
+					return new Message("tailCall", args);
 				}
 				else if (exp[0] === "if") {
 					return func(args, inTailPosition);

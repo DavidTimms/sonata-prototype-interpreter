@@ -38,4 +38,26 @@ ensure(mapped == ['hi!', 'hello!', 'bye!'])
 let exclaim = ([h|t]) -> [h ++ '!' | if t: exclaim(t) else: []]
 ensure(mapped == exclaim(['hi', 'hello', 'bye']))
 
+// test control commands, break and next
+var count = 0
+while true:
+	count += 1
+	if count < 2:
+		next()
+	break()
+ensure(count == 2)
+
+def early_return ->
+	if true:
+		return(true)
+	false
+ensure(early_return() == true)
+
+let xs = [1, 2, 3]
+let xs_out = for x in xs:
+	if x < 2:
+		next(45)
+	break(96)
+ensure(xs_out == [45, 96])
+
 'all tests passed'

@@ -58,8 +58,8 @@ function stringLiteral (str) {
 // returns true if str is a valid identifier 
 var identifier = (function () {
 	var identRegex = /^[$A-Z_][0-9A-Z_$]*$/i;
-	var kw = "def if else try catch throw for while do var let in return " +
-			 "break continue true false";
+	var kw = "def if else try catch throw for while do var let in " +
+			 "true false";
 	var keyword = buildTokenSet(kw);
 	return function (str) {
 		return (type(str) === "string") && identRegex.test(str) && !keyword[str];
