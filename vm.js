@@ -11,8 +11,9 @@ fs.readFile(inputFile, "utf8", function (err, source) {
 		code = JSON.parse(source);
 	}
 	else {
-		var parser = require("./lang.js");
-		code = parser.parse(source);
+		throw Error("input must be JSON");
+		//var parser = require("./lang.js");
+		//code = parser.parse(source);
 	}
 	out("returned ", evl(code));
 	//out("returned " + evl(["print", ["List"]]));
@@ -21,6 +22,13 @@ fs.readFile(inputFile, "utf8", function (err, source) {
 function out () {
 	var args = Array.prototype.slice.call(arguments);
 	console.log.apply(console, ["VM:"].concat(args));
+}
+
+function lispify (exp) {
+	if (exp instanceof Array) {
+		return "(" + exp.map(lispify).join(" ") + ")";
+	}
+	return "" + exp;
 }
 
 function cloneArray (arr) {
@@ -37,67 +45,52 @@ function Message (type, data) {
 }
 
 var globalNS = {
-	print: function (args) {
-		var s = args.join(" ");
+	print: argArrayWrap(function () {
+		var s = ([]).join.call(arguments, " ");
 		console.log(s);
 		return s;
-	},
-	"do": function (args, functionBody) {
-		scopes.push({});
-		var result;
-		// evaluate each expression in the block
-		for (var i = 0; i < args.length - 1; i++) {
-			result = evl(args[i]);
-			if (result instanceof Message) {
-				scopes.pop();
-				return result;
-			}
+	}),
+	"var": argArrayWrap(function (name, value) {
+		return assignVariable(name, value, "declaration");
+	}),
+	"=": argArrayWrap(assignVariable),
+	"==": argArrayWrap(function (a, b) {
+		if (a instanceof List && b instanceof List) {
+			return List.equal(a, b);
 		}
-		result = evl(args[i], functionBody);
-		scopes.pop();
-		return result;
-	},
-	"var": function (args) {
-		return assignVariable(args, "declaration");
-	},
-	"=": assignVariable,
-	"==": function (args) {
-		if (args[0] instanceof List && args[1] instanceof List) {
-			return List.equal(args[0], args[1]);
+		return a === b;
+	}),
+	"!=": argArrayWrap(function (a, b) {
+		if (a instanceof List && b instanceof List) {
+			return !List.equal(a, b);
 		}
-		return args[0] === args[1];
-	},
-	"!=": function (args) {
-		if (args[0] instanceof List && args[1] instanceof List) {
-			return !List.equal(args[0], args[1]);
+		return a !== b;
+	}),
+	"!": argArrayWrap(function (a) {
+		return !a;
+	}),
+	"^": argArrayWrap(function (a, b) {
+		return Math.pow(a, b);
+	}),
+	"++": argArrayWrap(function (a, b) {
+		if (a instanceof List && b instanceof List) {
+			return a.concat(b);
 		}
-		return args[0] !== args[1];
-	},
-	"!": function (args) {
-		return !args[0];
-	},
-	"^": function (args) {
-		return Math.pow(args[0], args[1]);
-	},
-	"++": function (args) {
-		if (args[0] instanceof List && args[1] instanceof List) {
-			return args[0].concat(args[1]);
+		return ("" + a) + b;
+	}),
+	"if": argArrayWrap(function (condition, ifBody, elseBody, inTailPosition) {
+		if (evl(condition)) {
+			return evl(ifBody, inTailPosition);
 		}
-		return ("" + args[0]) + args[1];
-	},
-	"if": function (args, inTailPosition) {
-		if (evl(args[0])) {
-			return evl(args[1], inTailPosition);
-		}
-		else if (args[2] !== undefined) {
-			return evl(args[2], inTailPosition);
+		else if (elseBody !== undefined) {
+			return evl(elseBody, inTailPosition);
 		}
 		return false;
-	},
-	"while": function (args) {
+	}),
+	"while": argArrayWrap(function (condition, body) {
 		var result = false;
-		while (evl(args[0])) {
-			result = evl(args[1]);
+		while (evl(condition)) {
+			result = evl(body);
 			if (result instanceof Message) {
 				if (result.type === "break") {
 					return result.data;
@@ -111,21 +104,21 @@ var globalNS = {
 			}
 		}
 		return result;
-	},
-	"for": function (args) {
+	}),
+	"for": argArrayWrap(function (loopVar, collection, body) {
 		var result;
 		var results = [];
-		var current = list = evl(args[1]);
+		var current = list = evl(collection);
 		var indexName, valueName;
 		var i = 0;
-		if (args[0] instanceof Array) {
+		if (loopVar instanceof Array) {
 			// index and value named
-			indexName = args[0][0];
-			valueName = args[0][1];
+			indexName = loopVar[0];
+			valueName = loopVar[1];
 		}
 		else {
 			// just value named
-			valueName = args[0];
+			valueName = loopVar;
 		}
 		while (current) {
 			// create loop scope
@@ -138,7 +131,7 @@ var globalNS = {
 			}
 			scopes.push(loopScope);
 			// push loop
-			result = evl(args[2]);
+			result = evl(body);
 			if (result instanceof Message) {
 				if (result.type === "break") {
 					results.push(result.data);
@@ -159,20 +152,19 @@ var globalNS = {
 		}
 		var resultList = List.fromArray(results);
 		return resultList;
-	},
-	"break": function (args) {
-		return new Message("break", args[0]);
-	},
-	"return": function (args) {
-		return new Message("return", args[0]);
-	},
-	"next": function (args) {
-		return new Message("next", args[0]);
-	},
-	"->": function (funcDef) {
-		var argNames = funcDef[0];
-		var body = funcDef[1];
-		var func = function (args) {
+	}),
+	"break": argArrayWrap(function (value) {
+		return new Message("break", value);
+	}),
+	"return": argArrayWrap(function (value) {
+		return new Message("return", value);
+	}),
+	"next": argArrayWrap(function (value) {
+		return new Message("next", value);
+	}),
+	"->": argArrayWrap(function (argNames, body) {
+		var func = function () {
+			var args = arguments;
 			var callingFunction = currentFunction;
 			currentFunction = func;
 			// save calling scope to return to after the function call
@@ -184,7 +176,7 @@ var globalNS = {
 				scopes.push({});
 				for (var i = 0; i < argNames.length; i++) {
 					//console.log(argNames[i], "=", args[i]);
-					assignVariable([argNames[i], args[i]], "declaration", "don't eval");
+					assignVariable(argNames[i], args[i], "declaration", "don't eval");
 				}
 				var result = evl(body, true);
 				scopes.pop();
@@ -206,38 +198,41 @@ var globalNS = {
 		};
 		func.closure = cloneArray(scopes);
 		return func;
-	},
-	List: function (args) {
-		return List.fromArray(args);
-	},
-	"List:compose": function (args) {
-		var heads = args[0];
-		var list = evl(args[1]);
+	}),
+	"List": argArrayWrap(function () {
+		return List.fromArray(arguments);
+	}),
+	"List:compose": argArrayWrap(function (heads, tail) {
+		var list = evl(tail);
 		if (!(list instanceof List)) {
-			throw Error("tail of a list must be a list. Variable '" + args[1] + "' is not.");
+			throw Error("tail of a list must be a list. Variable '" + tail + "' is not.");
 		}
 		for (var i = heads.length - 1; i >= 0; i--) {
 			list = list.add(evl(heads[i]));
 		}
 		return list;
-	},
-	head: function (args) {
-		return args[0].head;
-	},
-	tail: function (args) {
-		return args[0].tail;
-	},
-	length: function (args) {
-		return args[0].length;
-	},
-	ensure: function (args) {
-		for (var i = 0; i < args.length; i++) {
-			if (!evl(args[i])) {
-				throw Error("Check failed: " + args[i]);
+	}),
+	head: argArrayWrap(function (list) {
+		return list.head;
+	}),
+	tail: argArrayWrap(function (list) {
+		return list.tail;
+	}),
+	length:  argArrayWrap(function (list) {
+		return list.length;
+	}),
+	ensure: argArrayWrap(function () {
+		for (var i = 0; i < arguments.length; i++) {
+			if (!evl(arguments[i])) {
+				if (arguments[i] === "==") {
+					console.log(lispify(arguments[i][1]) + " => " + evl(arguments[i][1]));
+					console.log(lispify(arguments[i][2]) + " => " + evl(arguments[i][2]));
+				}
+				throw Error("Check failed: " + lispify(arguments[i]));
 			}
 		}
 		return true;
-	},
+	}),
 	show_scopes: function () {
 		out(JSON.stringify(scopes));
 	},
@@ -249,6 +244,11 @@ var globalNS = {
 	}
 };
 
+function argArrayWrap (func) {
+	func.isWrapped = true;
+	return func;
+}
+
 [
 	"var",
 	"=",
@@ -258,7 +258,6 @@ var globalNS = {
 	"->",
 	"List:compose",
 	"ensure",
-	"do"
 ].forEach(function (command) {
 	globalNS[command].dontEval = true;
 });
@@ -288,10 +287,9 @@ function setVal (identifier, val) {
 	return val;
 }
 
-function assignVariable (args, declaration, dontEval) {
+function assignVariable (left, right, declaration, dontEval) {
 	var i;
-	var left = args[0];
-	var result = ((args[1] === undefined  || dontEval) ? args[1] : evl(args[1]));
+	var result = ((right === undefined  || dontEval) ? right : evl(right));
 	var topScope = scopes[scopes.length - 1];
 	if (left instanceof Array) {
 		var current = result;
@@ -367,40 +365,82 @@ function assignVariable (args, declaration, dontEval) {
 }
 
 ["+", "-", "*", "/", "%", "<", ">", ">=", "<=", "&&", "||"].forEach(function (op) {
-	var body = "return args[0] " + op + " args[1]";
-	globalNS[op] = new Function("args", body);
+	var body = "return a " + op + " b";
+	globalNS[op] = argArrayWrap(new Function("a", "b", body));
 });
 
 function evl (exp, inTailPosition) {
 	if (exp instanceof Array) {
-		var args, func = evl(exp[0]);
-		if (func.dontEval) {
-			args = exp.slice(1);
-			// call the function
-			return func(args, inTailPosition);
+		// evaluate block expressions in tern and return the last
+		if (exp[0] === "do") {
+			scopes.push({});
+			var result;
+			// evaluate each expression in the block
+			for (var i = 1; i < exp.length - 1; i++) {
+				result = evl(exp[i]);
+				if (result instanceof Message) {
+					scopes.pop();
+					return result;
+				}
+			}
+			result = evl(exp[i], inTailPosition);
+			scopes.pop();
+			return result;
 		}
 		else {
-			// evaluate each argument
-			args = [];
-			for (var i = 1; i < exp.length; i++) {
-				args.push(evl(exp[i]));
+			var args, func = evl(exp[0]);
+			if (!func.isWrapped && func.length > 0) {
+				throw Error("unwrapped function: " + exp[0]);
 			}
-			if (inTailPosition) {
-				// return arguments for tail call
-				if (func == currentFunction) {
-					return new Message("tailCall", args);
+			if (func.dontEval) {
+				// special case for "if" to add tail position flag
+				if(exp[0] === "if" && inTailPosition) {
+					return func(exp[1], exp[2], exp[3], inTailPosition);
 				}
-				else if (exp[0] === "if") {
-					return func(args, inTailPosition);
+
+				// Call the function to evaluate the expression
+				switch (exp.length) {
+					case 1:  return func();
+					case 2:  return func(exp[1]);
+					case 3:  return func(exp[1], exp[2]);
+					case 4:  return func(exp[1], exp[2], exp[3]);
+					case 5:  return func(exp[1], exp[2], exp[3], exp[4]);
+					case 6:  return func(exp[1], exp[2], exp[3], exp[4], exp[6]);
+					default: return func.apply(null, exp.slice(1));
 				}
 			}
-			// call the function
-			if (typeof func !== 'function') {
-				console.log("not a function: ", func);
-				console.log("in expression: ", exp);
-				process.exit();
+			else {
+				if (inTailPosition) {
+					// return arguments for tail call
+					if (func === currentFunction) {
+						// evaluate each argument
+						args = [];
+						for (var i = 1; i < exp.length; i++) {
+							args.push(evl(exp[i]));
+						}
+						return new Message("tailCall", args);
+					}
+				}
+				// call the function
+				if (typeof func !== 'function') {
+					console.log("not a function: ", func);
+					console.log("in expression: ", exp);
+					process.exit();
+				}
+				switch (exp.length) {
+					case 1:  return func();
+					case 2:  return func(evl(exp[1]));
+					case 3:  return func(evl(exp[1]), evl(exp[2]));
+					case 4:  return func(evl(exp[1]), evl(exp[2]), 
+						evl(exp[3]));
+					case 5:  return func(evl(exp[1]), evl(exp[2]), 
+						evl(exp[3]), evl(exp[4]));
+					case 6:  return func(evl(exp[1]), evl(exp[2]), 
+						evl(exp[3]), evl(exp[4]), evl(exp[5]));
+					default: return func.apply(null, exp.slice(1));
+				}
 			}
-			return func(args);
+				
 		}
 	}
 	// boolean literals

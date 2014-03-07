@@ -58,6 +58,7 @@ var List = (function () {
         }
 
     };
+    List.prototype.inspect = List.prototype.toString;
     List.equal = function (l1, l2) {
         if (l1.length !== l2.length) return false;
         while (l1) {
