@@ -53,7 +53,14 @@ def early_return ->
 	false
 ensure(early_return() == true)
 
+// assigning to a variable before it is defined throws an error
+ensure(throws(xs = 23))
+
 let xs = [1, 2, 3]
+
+// assigning to an immutable variable throws an error
+ensure(throws(xs = [3, 5, 8]))
+
 let xs_out = for x in xs:
 	if x < 2:
 		next(45)

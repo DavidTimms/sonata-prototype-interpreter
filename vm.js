@@ -58,7 +58,14 @@ var globalNS = {
 		return s;
 	},
 	"var": meta(function (name, value) {
-		return assignVariable(name, value, "declaration");
+		return assignVariable(name, value, {declaration: true});
+	}),
+	"let": meta(function (name, value) {
+		var evaluated = assignVariable(name, value, {
+			declaration: true,
+			immutable: true
+		});
+		return evaluated;
 	}),
 	"=": meta(assignVariable),
 	"==": function (a, b) {
@@ -135,24 +142,24 @@ var globalNS = {
 		}
 		while (current) {
 			// create loop scope
-			var loopScope = {};
+			var loopScope = new Scope();
 			loopScope[valueName] = current.head;
 			if (indexName) {
 				// set named array index
 				loopScope[indexName] = i;
 				i += 1;
 			}
-			scopes.push(loopScope);
+			stack.push(loopScope);
 			// push loop
 			result = evl(body);
 			if (result instanceof Message) {
 				if (result.type === "break") {
 					results.push(result.data);
-					scopes.pop();
+					stack.pop();
 					break;
 				}
 				else if (result.type === "return") {
-					scopes.pop();
+					stack.pop();
 					return result.data;
 				}
 				else if (result.type === "next") {
@@ -160,7 +167,7 @@ var globalNS = {
 				}
 			}
 			results.push(result);
-			scopes.pop();
+			stack.pop();
 			current = current.tail;
 		}
 		var resultList = List.fromArray(results);
@@ -181,18 +188,18 @@ var globalNS = {
 			var callingFunction = currentFunction;
 			currentFunction = func;
 			// save calling scope to return to after the function call
-			var oldScopes = scopes;
+			var oldScopes = stack;
 			var tcoCount = 0;
 			do {
 				//console.log("TCO Count:", tcoCount++);
-				scopes = func.closure;
-				scopes.push({});
+				stack = func.closure;
+				stack.push(new Scope());
 				for (var i = 0; i < argNames.length; i++) {
 					//console.log(argNames[i], "=", args[i]);
-					assignVariable(argNames[i], args[i], "declaration", "don't eval");
+					assignVariable(argNames[i], args[i], {declaration: true, dontEval: true});
 				}
 				var result = evl(body, true);
-				scopes.pop();
+				stack.pop();
 				// for next iteration of TCO
 				if (result instanceof Message) {
 					if (result.type === "tailCall") {
@@ -205,11 +212,11 @@ var globalNS = {
 				}
 				break;
 			} while (true);
-			scopes = oldScopes;
+			stack = oldScopes;
 			currentFunction = callingFunction;
 			return result;
 		};
-		func.closure = cloneArray(scopes);
+		func.closure = cloneArray(stack);
 		return func;
 	}),
 	"List": function () {
@@ -234,20 +241,23 @@ var globalNS = {
 	length: function (list) {
 		return list.length;
 	},
-	ensure: meta(function () {
-		for (var i = 0; i < arguments.length; i++) {
-			if (!evl(arguments[i])) {
-				if (arguments[i] === "==") {
-					console.log(lispify(arguments[i][1]) + " => " + evl(arguments[i][1]));
-					console.log(lispify(arguments[i][2]) + " => " + evl(arguments[i][2]));
-				}
-				throw Error("Check failed: " + lispify(arguments[i]));
-			}
+	ensure: meta(function (expression) {
+		if (!evl(expression)) {
+			throw Error("Check failed: " + lispify(expression));
 		}
 		return true;
 	}),
-	show_scopes: function () {
-		out(JSON.stringify(scopes));
+	"throws": meta(function (expression) {
+		try {
+			evl(expression);
+			return false;
+		}
+		catch (e) {
+			return true;
+		}
+	}),
+	show_stack: function () {
+		out(JSON.stringify(stack));
 	},
 	timer: function () {
 		var start = Date.now();
@@ -256,38 +266,51 @@ var globalNS = {
 		}
 	}
 };
-// duplicate var to let and def
-// they will behave differently later
-globalNS["let"] = globalNS["var"];
-globalNS["def"] = globalNS["var"];
+// duplicate let to def
+globalNS["def"] = globalNS["let"];
 
-var scopes = [globalNS];
+var stack = [globalNS];
+
+function Scope () {
+	// object to store immutability flags
+	// for variables in this scope
+	this.$immutable = {};
+}
+
 var currentFunction, tailCall = false;
 
 function getVal (identifier) {
-	for (var i = scopes.length - 1; i >= 0; i--) {
-		if (identifier in scopes[i]) {
-			return scopes[i][identifier];
+	for (var i = stack.length - 1; i >= 0; i--) {
+		if (identifier in stack[i]) {
+			return stack[i][identifier];
 		}
 	}
 	throw Error("The variable '" + identifier + "' does not exist");
 }
 
 function setVal (identifier, val) {
-	for (var i = scopes.length - 1; i >= 0; i--) {
-		if (scopes[i][identifier] !== undefined) {
-			scopes[i][identifier] = val;
+	// move down the stack until the variable is found then assign to it
+	for (var i = stack.length - 1; i >= 0; i--) {
+		if (stack[i][identifier] !== undefined) {
+			if (stack[i].$immutable[identifier]) {
+				throw Error("The variable " + identifier + 
+					" is immutable and cannot be assigned to");
+			}
+			stack[i][identifier] = val;
 			return val;
 		}
 	}
-	scopes[scopes.length - 1][identifier] = val;
-	return val;
+	throw Error("the variable " + identifier + 
+		" cannot be assigned to before it is defined");
 }
 
-function assignVariable (left, right, declaration, dontEval) {
-	var i;
-	var result = ((right === undefined  || dontEval) ? right : evl(right));
-	var topScope = scopes[scopes.length - 1];
+function assignVariable (left, right, options) {
+	options = options || {};
+	var i, declaration = options.declaration;
+	var result = (right === undefined  || options.dontEval) ? right : evl(right);
+	var topScope = stack[stack.length - 1];
+
+	// destructuring list assignment 
 	if (left instanceof Array) {
 		var current = result;
 		if (left[0] === "List") {
@@ -304,7 +327,6 @@ function assignVariable (left, right, declaration, dontEval) {
 				}
 				else {
 					// assigning existing variables
-					getVal(left[i]);
 					if (current) {
 						setVal(left[i], current.head);
 						current = current.tail;
@@ -330,7 +352,6 @@ function assignVariable (left, right, declaration, dontEval) {
 				}
 				else {
 					// assigning existing variables
-					getVal(heads[i]);
 					if (current) {
 						setVal(heads[i], current.head);
 						current = current.tail;
@@ -352,15 +373,23 @@ function assignVariable (left, right, declaration, dontEval) {
 		}
 		return result;
 	}
+	// standard single variable assignment
 	if (declaration) {
+		if (options.immutable) {
+			// set immutable flag in scope
+			topScope.$immutable[left] = true;
+		}
+		if (topScope[left] !== undefined) {
+			throw Error("The variable " + left + " is already declared in this scope");
+		}
 		return topScope[left] = result;
 	}
 	else {
-		getVal(left);
 		return setVal(left, result);
 	}
 }
 
+// Generate functions for the basic arithmetic and logically operations
 ["+", "-", "*", "/", "%", "<", ">", ">=", "<="].forEach(function (op) {
 	var body = "return a " + op + " b";
 	globalNS[op] = new Function("a", "b", body);
@@ -370,18 +399,18 @@ function evl (exp, inTailPosition) {
 	if (exp instanceof Array) {
 		// evaluate block expressions in tern and return the last
 		if (exp[0] === "do") {
-			scopes.push({});
+			stack.push(new Scope());
 			var result;
 			// evaluate each expression in the block
 			for (var i = 1; i < exp.length - 1; i++) {
 				result = evl(exp[i]);
 				if (result instanceof Message) {
-					scopes.pop();
+					stack.pop();
 					return result;
 				}
 			}
 			result = evl(exp[i], inTailPosition);
-			scopes.pop();
+			stack.pop();
 			return result;
 		}
 		else {
@@ -392,7 +421,7 @@ function evl (exp, inTailPosition) {
 					return func(exp[1], exp[2], exp[3], inTailPosition);
 				}
 
-				// Call the function to evaluate the expression
+				// apply the unevaluated arguments to the meta-function
 				switch (exp.length) {
 					case 1:  return func();
 					case 2:  return func(exp[1]);
@@ -421,6 +450,7 @@ function evl (exp, inTailPosition) {
 					console.log("in expression: ", exp);
 					process.exit();
 				}
+				// evaluate the arguments and apply them to the function
 				switch (exp.length) {
 					case 1:  return func();
 					case 2:  return func(evl(exp[1]));
