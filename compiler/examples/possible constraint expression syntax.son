@@ -1,0 +1,13 @@
+let people = [{name: 'Dave', age: 21, gender: 'male'},
+	{name: 'Laura', age: 32, gender: 'female'},
+	{name: 'John', age: 36, gender: 'male'},
+	{name: 'Mike', age: 17, gender: 'male'}]
+
+let men = all person where:
+	person in people
+	person.gender == 'male'
+	person.age >= 18
+// => [{name='Dave', age: 21, gender: 'male'}, {name: 'John', age: 36, gender: 'male'}]
+
+// equivalent in Python:
+//men = person for person in people if person.gender == male and person.age >= 18

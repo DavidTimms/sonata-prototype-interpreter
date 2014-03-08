@@ -37,7 +37,7 @@ var unaryOp = (function () {
 
 // assignment operator predicate
 var mutateAssignOp = (function () {
-	var mutateOpsStr = "+= -= *= /= ^= %= ++=";
+	var mutateOpsStr = "+= -= *= /= ^= %= ++= ||= &&=";
 	var mutateOpSet = buildTokenSet(mutateOpsStr);
 	return function mutateAssignOp (str) {
 		return mutateOpSet[str] || false;

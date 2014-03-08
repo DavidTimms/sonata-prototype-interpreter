@@ -1,6 +1,15 @@
 var fs = require("fs");
 var List = require("./vm-utils/linked-list.js");
 
+var mori = require("mori");
+var list = mori.list;
+var conj = mori.conj;
+var cons = mori.cons;
+var isMori = mori.is_collection;
+var isSeq = mori.is_seq;
+var first = mori.first;
+var rest = mori.rest;
+
 var inputFile = process.argv[2] || "test-output.json";
 var inputIsAST = !! inputFile.match(/.json$/);
 
@@ -12,11 +21,8 @@ fs.readFile(inputFile, "utf8", function (err, source) {
 	}
 	else {
 		throw Error("input must be JSON");
-		//var parser = require("./lang.js");
-		//code = parser.parse(source);
 	}
-	out("returned ", evl(code));
-	//out("returned " + evl(["print", ["List"]]));
+	out("returned", evl(code));
 });
 
 function out () {
@@ -39,6 +45,24 @@ function cloneArray (arr) {
 	return clone;
 }
 
+function arrayToList (arr) {
+	var l = list();
+	for (var i = arr.length - 1; i >= 0; i--) {
+		l = cons(arr[i], l);
+	}
+	return l;
+}
+
+// return a function which returns each item of the collection
+function iterate (collection) {
+	return function () {
+		var head = first(collection);
+		collection = rest(collection);
+		return head;
+	}
+}
+
+// System message constructor
 function Message (type, data) {
 	this.type = type;
 	this.data = data;
@@ -50,6 +74,8 @@ function meta (func) {
 	func.isMeta = true;
 	return func;
 }
+
+var stopIteration = null;
 
 var globalNS = {
 	print: function () {
@@ -69,17 +95,19 @@ var globalNS = {
 	}),
 	"=": meta(assignVariable),
 	"==": function (a, b) {
-		if (a instanceof List && b instanceof List) {
-			return List.equal(a, b);
+		if (isMori(a) && isMori(b)) {
+			return mori.equals(a, b);
 		}
 		return a === b;
 	},
 	"!=": function (a, b) {
-		if (a instanceof List && b instanceof List) {
-			return !List.equal(a, b);
+		if (isMori(a) && isMori(b)) {
+			return !mori.equals(a, b);
 		}
 		return a !== b;
 	},
+	is_list: mori.is_list,
+	is_seq: mori.is_seq,
 	"!": function (a) {
 		return !a;
 	},
@@ -93,8 +121,8 @@ var globalNS = {
 		return Math.pow(a, b);
 	},
 	"++": function (a, b) {
-		if (a instanceof List && b instanceof List) {
-			return a.concat(b);
+		if (isSeq(a) && isSeq(b)) {
+			return mori.concat(a, b);
 		}
 		return ("" + a) + b;
 	},
@@ -128,9 +156,11 @@ var globalNS = {
 	"for": meta(function (loopVar, collection, body) {
 		var result;
 		var results = [];
-		var current = list = evl(collection);
+		var items = evl(collection);
+		var nextVal = (typeof items === 'function' ? items : iterate(items));
 		var indexName, valueName;
-		var i = 0;
+		var value;
+		var index = 0;
 		if (loopVar instanceof Array) {
 			// index and value named
 			indexName = loopVar[0];
@@ -140,17 +170,16 @@ var globalNS = {
 			// just value named
 			valueName = loopVar;
 		}
-		while (current) {
+		while ((value = nextVal()) !== stopIteration) {
 			// create loop scope
 			var loopScope = new Scope();
-			loopScope[valueName] = current.head;
+			loopScope[valueName] = value;
 			if (indexName) {
 				// set named array index
-				loopScope[indexName] = i;
-				i += 1;
+				loopScope[indexName] = index;
+				index += 1;
 			}
 			stack.push(loopScope);
-			// push loop
 			result = evl(body);
 			if (result instanceof Message) {
 				if (result.type === "break") {
@@ -168,10 +197,8 @@ var globalNS = {
 			}
 			results.push(result);
 			stack.pop();
-			current = current.tail;
 		}
-		var resultList = List.fromArray(results);
-		return resultList;
+		return arrayToList(results);
 	}),
 	"break": function (value) {
 		return new Message("break", value);
@@ -223,27 +250,31 @@ var globalNS = {
 		func.closure = cloneArray(stack);
 		return func;
 	}),
-	"List": function () {
-		return List.fromArray(arguments);
-	},
+	"List": list,
 	"List:compose": meta(function (heads, tail) {
-		var list = evl(tail);
-		if (!(list instanceof List)) {
+		var newList = evl(tail);
+		if (!isSeq(newList)) {
 			throw Error("tail of a list must be a list. Variable '" + tail + "' is not.");
 		}
 		for (var i = heads.length - 1; i >= 0; i--) {
-			list = list.add(evl(heads[i]));
+			newList = cons(evl(heads[i]), newList);
 		}
-		return list;
+		return newList;
 	}),
-	head: function (list) {
-		return list.head;
-	},
-	tail: function (list) {
-		return list.tail;
-	},
-	length: function (list) {
-		return list.length;
+	first: mori.first,
+	rest: mori.rest,
+	length: mori.count,
+	range: function (from, to) {
+		if (to === undefined) {
+			to = from;
+			from = 0;
+		}
+		to = Math.floor(to);
+		var step = (from < to ? 1 : -1);
+		var curr = Math.floor(from) - step;
+		return function () {
+			return ((curr += step) === to ? null : curr); 
+		}
 	},
 	ensure: meta(function (expression) {
 		if (!evl(expression)) {
@@ -422,6 +453,7 @@ function assignVariable (left, right, options) {
 	}
 }
 
+// Main function for evaluating an expression
 function evl (exp, inTailPosition) {
 	if (exp instanceof Array) {
 		// evaluate block expressions in tern and return the last
