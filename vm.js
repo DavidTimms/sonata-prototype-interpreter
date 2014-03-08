@@ -44,41 +44,54 @@ function Message (type, data) {
 	this.data = data;
 }
 
+// mark a function as a meta-function meaning its 
+// arguments are not evaluated before it is called
+function meta (func) {
+	func.isMeta = true;
+	return func;
+}
+
 var globalNS = {
-	print: argArrayWrap(function () {
+	print: function () {
 		var s = ([]).join.call(arguments, " ");
 		console.log(s);
 		return s;
-	}),
-	"var": argArrayWrap(function (name, value) {
+	},
+	"var": meta(function (name, value) {
 		return assignVariable(name, value, "declaration");
 	}),
-	"=": argArrayWrap(assignVariable),
-	"==": argArrayWrap(function (a, b) {
+	"=": meta(assignVariable),
+	"==": function (a, b) {
 		if (a instanceof List && b instanceof List) {
 			return List.equal(a, b);
 		}
 		return a === b;
-	}),
-	"!=": argArrayWrap(function (a, b) {
+	},
+	"!=": function (a, b) {
 		if (a instanceof List && b instanceof List) {
 			return !List.equal(a, b);
 		}
 		return a !== b;
-	}),
-	"!": argArrayWrap(function (a) {
+	},
+	"!": function (a) {
 		return !a;
+	},
+	"||": meta(function (a, b) {
+		return evl(a) || evl(b);
 	}),
-	"^": argArrayWrap(function (a, b) {
+	"&&": meta(function (a, b) {
+		return evl(a) && evl(b);
+	}),
+	"^": function (a, b) {
 		return Math.pow(a, b);
-	}),
-	"++": argArrayWrap(function (a, b) {
+	},
+	"++": function (a, b) {
 		if (a instanceof List && b instanceof List) {
 			return a.concat(b);
 		}
 		return ("" + a) + b;
-	}),
-	"if": argArrayWrap(function (condition, ifBody, elseBody, inTailPosition) {
+	},
+	"if": meta(function (condition, ifBody, elseBody, inTailPosition) {
 		if (evl(condition)) {
 			return evl(ifBody, inTailPosition);
 		}
@@ -87,7 +100,7 @@ var globalNS = {
 		}
 		return false;
 	}),
-	"while": argArrayWrap(function (condition, body) {
+	"while": meta(function (condition, body) {
 		var result = false;
 		while (evl(condition)) {
 			result = evl(body);
@@ -105,7 +118,7 @@ var globalNS = {
 		}
 		return result;
 	}),
-	"for": argArrayWrap(function (loopVar, collection, body) {
+	"for": meta(function (loopVar, collection, body) {
 		var result;
 		var results = [];
 		var current = list = evl(collection);
@@ -153,16 +166,16 @@ var globalNS = {
 		var resultList = List.fromArray(results);
 		return resultList;
 	}),
-	"break": argArrayWrap(function (value) {
+	"break": function (value) {
 		return new Message("break", value);
-	}),
-	"return": argArrayWrap(function (value) {
+	},
+	"return": function (value) {
 		return new Message("return", value);
-	}),
-	"next": argArrayWrap(function (value) {
+	},
+	"next": function (value) {
 		return new Message("next", value);
-	}),
-	"->": argArrayWrap(function (argNames, body) {
+	},
+	"->": meta(function (argNames, body) {
 		var func = function () {
 			var args = arguments;
 			var callingFunction = currentFunction;
@@ -199,10 +212,10 @@ var globalNS = {
 		func.closure = cloneArray(scopes);
 		return func;
 	}),
-	"List": argArrayWrap(function () {
+	"List": function () {
 		return List.fromArray(arguments);
-	}),
-	"List:compose": argArrayWrap(function (heads, tail) {
+	},
+	"List:compose": meta(function (heads, tail) {
 		var list = evl(tail);
 		if (!(list instanceof List)) {
 			throw Error("tail of a list must be a list. Variable '" + tail + "' is not.");
@@ -212,16 +225,16 @@ var globalNS = {
 		}
 		return list;
 	}),
-	head: argArrayWrap(function (list) {
+	head: function (list) {
 		return list.head;
-	}),
-	tail: argArrayWrap(function (list) {
+	},
+	tail: function (list) {
 		return list.tail;
-	}),
-	length:  argArrayWrap(function (list) {
+	},
+	length: function (list) {
 		return list.length;
-	}),
-	ensure: argArrayWrap(function () {
+	},
+	ensure: meta(function () {
 		for (var i = 0; i < arguments.length; i++) {
 			if (!evl(arguments[i])) {
 				if (arguments[i] === "==") {
@@ -243,24 +256,8 @@ var globalNS = {
 		}
 	}
 };
-
-function argArrayWrap (func) {
-	func.isWrapped = true;
-	return func;
-}
-
-[
-	"var",
-	"=",
-	"if",
-	"while",
-	"for",
-	"->",
-	"List:compose",
-	"ensure",
-].forEach(function (command) {
-	globalNS[command].dontEval = true;
-});
+// duplicate var to let and def
+// they will behave differently later
 globalNS["let"] = globalNS["var"];
 globalNS["def"] = globalNS["var"];
 
@@ -364,9 +361,9 @@ function assignVariable (left, right, declaration, dontEval) {
 	}
 }
 
-["+", "-", "*", "/", "%", "<", ">", ">=", "<=", "&&", "||"].forEach(function (op) {
+["+", "-", "*", "/", "%", "<", ">", ">=", "<="].forEach(function (op) {
 	var body = "return a " + op + " b";
-	globalNS[op] = argArrayWrap(new Function("a", "b", body));
+	globalNS[op] = new Function("a", "b", body);
 });
 
 function evl (exp, inTailPosition) {
@@ -389,10 +386,7 @@ function evl (exp, inTailPosition) {
 		}
 		else {
 			var args, func = evl(exp[0]);
-			if (!func.isWrapped && func.length > 0) {
-				throw Error("unwrapped function: " + exp[0]);
-			}
-			if (func.dontEval) {
+			if (func.isMeta) {
 				// special case for "if" to add tail position flag
 				if(exp[0] === "if" && inTailPosition) {
 					return func(exp[1], exp[2], exp[3], inTailPosition);
