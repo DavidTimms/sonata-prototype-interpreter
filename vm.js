@@ -366,76 +366,43 @@ function setVal (identifier, val) {
 		" cannot be assigned to before it is defined");
 }
 
+function decomposeList (lefts, rights, options) {
+	options.dontEval = true;
+	if (rights !== undefined) {
+		for (i = 0; i < lefts.length; i++) {
+			assignVariable(lefts[i], first(rights), options);
+			rights = rest(rights) || list();
+		}
+	}
+	else {
+		for (i = 0; i < lefts.length; i++) {
+			assignVariable(lefts[i], undefined, options);
+		}
+	}
+	return rights;
+}
+
 function assignVariable (left, right, options) {
 	options = options || {};
 	var i, declaration = options.declaration;
 	var result = (right === undefined  || options.dontEval) ? right : evl(right);
 	var topScope = stack[stack.length - 1];
 
-	// NOTE: immutability for list assignment not yet implemented
-
 	// destructuring list assignment 
 	if (left instanceof Array) {
-		var current = result;
 		if (left[0] === "List") {
-			for (i = 1; i < left.length; i++) {
-				if (declaration) {
-					// declaring new variables
-					if (current) {
-						topScope[left[i]] = current.head;
-						current = current.tail;
-					}
-					else {
-						topScope[left[i]] = undefined;
-					}
-				}
-				else {
-					// assigning existing variables
-					if (current) {
-						setVal(left[i], current.head);
-						current = current.tail;
-					}
-					else {
-						setVal(left[i], undefined);
-					}
-				}
-			}
+			decomposeList(left.slice(1), result, options);
+			return result;
 		}
 		else if (left[0] === "List:compose") {
-			var heads = left[1];
-			for (i = 0; i < heads.length; i++) {
-				if (declaration) {
-					// declaring new variables
-					if (current) {
-						topScope[heads[i]] = current.head;
-						current = current.tail;
-					}
-					else {
-						topScope[heads[i]] = undefined;
-					}
-				}
-				else {
-					// assigning existing variables
-					if (current) {
-						setVal(heads[i], current.head);
-						current = current.tail;
-					}
-					else {
-						setVal(heads[i], undefined);
-					}
-				}
-			}
-			if (declaration) {
-				topScope[left[2]] = current;
-			}
-			else {
-				setVal(left[2], current);
-			}
+			// decompose the head of the list then carry on to
+			// assign the tail in the normal way
+			result = decomposeList(left[1], result, options);
+			left = left[2];
 		}
 		else {
 			throw Error("invalid left side in assignment");
 		}
-		return result;
 	}
 	// standard single variable assignment
 	if (declaration) {
@@ -456,6 +423,7 @@ function assignVariable (left, right, options) {
 // Main function for evaluating an expression
 function evl (exp, inTailPosition) {
 	if (exp instanceof Array) {
+		//out("evaluating " + lispify(exp));
 		// evaluate block expressions in tern and return the last
 		if (exp[0] === "do") {
 			stack.push(new Scope());

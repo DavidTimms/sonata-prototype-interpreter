@@ -35,7 +35,7 @@ let mapped = for greeting in ['hi', 'hello', 'bye']: greeting ++ '!'
 ensure(mapped == ['hi!', 'hello!', 'bye!'])
 
 // recursive functional method of mapping over a list
-let exclaim = ([h|t]) -> [h ++ '!' | if t: exclaim(t) else: []]
+let exclaim = ([h|t]) -> [h ++ '!' | if t != []: exclaim(t) else: []]
 ensure(mapped == exclaim(['hi', 'hello', 'bye']))
 
 // test control commands, break and next

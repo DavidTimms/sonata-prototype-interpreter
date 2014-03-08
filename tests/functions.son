@@ -48,8 +48,8 @@ def fibonacci (n) ->
 	else: fibonacci(n - 1) + fibonacci(n - 2)
 ensure(fibonacci(11) == 89)
 
-def join ([first|rest]) ->
-	first ++ (if rest: ' ' ++ join(rest) else: '')
+def join ([head|tail]) ->
+	head ++ (if tail != []: ' ' ++ join(tail) else: '')
 
 ensure(join(['Hello', 'world', 'foo', 'bar']) == 'Hello world foo bar')
 
