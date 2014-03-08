@@ -1,0 +1,22 @@
+
+let [a | b] = [1, 2, 3]
+ensure(a == 1)
+ensure(b == [2, 3])
+
+var c
+var d
+// brackets around list assignment are optional
+[c, d] = b
+c, d = b
+ensure(c = 2)
+ensure(d = 3)
+
+var e = [c, d | b]
+ensure(e = [2, 3, 2, 3])
+
+def func(x) ->
+	var y = 2
+	print_stack()
+func()
+
+'all tests passed'

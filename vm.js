@@ -196,7 +196,11 @@ var globalNS = {
 				stack.push(new Scope());
 				for (var i = 0; i < argNames.length; i++) {
 					//console.log(argNames[i], "=", args[i]);
-					assignVariable(argNames[i], args[i], {declaration: true, dontEval: true});
+					assignVariable(argNames[i], args[i], {
+						declaration: true, 
+						dontEval: true,
+						immutable: true
+					});
 				}
 				var result = evl(body, true);
 				stack.pop();
@@ -256,8 +260,22 @@ var globalNS = {
 			return true;
 		}
 	}),
-	show_stack: function () {
-		out(JSON.stringify(stack));
+	print_stack: function () {
+		console.log("MEMORY STACK");
+		for (var i = stack.length - 1; i >= 0; i--) {
+			var scope = stack[i];
+			for (var key in scope) {
+				if (key === "$immutable") continue;
+				var immutability = (scope.$immutable[key] ? "(imm)" : "(mut)");
+				if (typeof scope[key] === 'function') {
+					console.log(immutability, key + ": " + "function/" + scope[key].length);
+				}
+				else {
+					console.log(immutability, key + ": " + scope[key]);
+				}
+			}
+			console.log("----------");
+		};
 	},
 	timer: function () {
 		var start = Date.now();
@@ -266,10 +284,23 @@ var globalNS = {
 		}
 	}
 };
+
 // duplicate let to def
 globalNS["def"] = globalNS["let"];
 
-var stack = [globalNS];
+// Generate functions for the basic arithmetic and logically operations
+["+", "-", "*", "/", "%", "<", ">", ">=", "<="].forEach(function (op) {
+	var body = "return a " + op + " b";
+	globalNS[op] = new Function("a", "b", body);
+});
+
+// create initial stack
+var topLevel = new Scope();
+for (var prop in globalNS) {
+	topLevel[prop] = globalNS[prop];
+	topLevel.$immutable[prop] = true;
+}
+var stack = [topLevel];
 
 function Scope () {
 	// object to store immutability flags
@@ -281,7 +312,7 @@ var currentFunction, tailCall = false;
 
 function getVal (identifier) {
 	for (var i = stack.length - 1; i >= 0; i--) {
-		if (identifier in stack[i]) {
+		if (stack[i].hasOwnProperty(identifier)) {
 			return stack[i][identifier];
 		}
 	}
@@ -291,7 +322,7 @@ function getVal (identifier) {
 function setVal (identifier, val) {
 	// move down the stack until the variable is found then assign to it
 	for (var i = stack.length - 1; i >= 0; i--) {
-		if (stack[i][identifier] !== undefined) {
+		if (stack[i].hasOwnProperty(identifier)) {
 			if (stack[i].$immutable[identifier]) {
 				throw Error("The variable " + identifier + 
 					" is immutable and cannot be assigned to");
@@ -309,6 +340,8 @@ function assignVariable (left, right, options) {
 	var i, declaration = options.declaration;
 	var result = (right === undefined  || options.dontEval) ? right : evl(right);
 	var topScope = stack[stack.length - 1];
+
+	// NOTE: immutability for list assignment not yet implemented
 
 	// destructuring list assignment 
 	if (left instanceof Array) {
@@ -388,12 +421,6 @@ function assignVariable (left, right, options) {
 		return setVal(left, result);
 	}
 }
-
-// Generate functions for the basic arithmetic and logically operations
-["+", "-", "*", "/", "%", "<", ">", ">=", "<="].forEach(function (op) {
-	var body = "return a " + op + " b";
-	globalNS[op] = new Function("a", "b", body);
-});
 
 function evl (exp, inTailPosition) {
 	if (exp instanceof Array) {

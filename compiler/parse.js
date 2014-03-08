@@ -116,8 +116,8 @@ rule("function", ["(", ")", "->", rule("block")], function (tokens) {
 });
 rule("function", [
 		"(", 
-		rep0(rule("assignable"), ","), 
-		rule("assignable"),	
+		rep0(rule("funcAssignable"), ","), 
+		rule("funcAssignable"),	
 		")", 
 		"->", 
 		rule("block")
@@ -128,49 +128,6 @@ rule("function", [
 });
 rule("function", ["->", rule("block")], function (tokens) {
 	return ["->", [], tokens[1]];
-});
-
-rule("binaryExpression", [rep1(rule("atom"), operator), rule("atom")], 
-	function (tokens) {
-		// Top-down operator precedence associator
-		operators.forEach(function (op) {
-			for (var i = 0; i < tokens.length; i++) {
-				if (tokens[i] === op) {
-					tokens.splice(i - 1, 3, [op, tokens[i - 1], tokens[i + 1]]);
-					i -= 1;
-				}
-			}
-		});
-		return tokens[0];
-	});
-
-
-// mutable variable declaration
-rule("declaration", ["var", identifier, "=", rule("expression")], function (tokens) {
-	return ["var", tokens[1], tokens[3]];
-});
-// Variable can be declared without an initial value, as it can be assigned to later
-rule("declaration", ["var", identifier], function (tokens) {
-	return [tokens[0], tokens[1]];
-});
-// immutable variable declaration
-rule("declaration", ["let", identifier, "=", rule("expression")], function (tokens) {
-	return ["let", tokens[1], tokens[3]];
-});
-// single function definition
-rule("declaration", ["def", identifier, rule("function")], function (tokens) {
-	return ["def", tokens[1], tokens[2]];
-});
-// single function definition
-rule("declaration", ["def", identifier, ":", rule("patternBody")], function (tokens) {
-	var patterns = tokens[3];
-	// Verify that the pattern match functions are valid
-	for (var i = 0; i < patterns.length; i++) {
-		if (!(patterns[i] instanceof Array) || patterns[i][0] !== "->") {
-			throw SyntaxError("pattern matched function declaration invalid");
-		}
-	}
-	return ["def", tokens[1], patterns];
 });
 
 rule("patternBody", [isArray], function (block) {
@@ -190,6 +147,48 @@ rule("patternFunc", ["(", rep0(rule("atom"), ","), rule("atom"), ")", "->", rule
 		return ["->", args, tokens[tokens.length - 1]];
 });
 
+rule("binaryExpression", [rep1(rule("atom"), operator), rule("atom")], 
+	function (tokens) {
+		// Top-down operator precedence associator
+		operators.forEach(function (op) {
+			for (var i = 0; i < tokens.length; i++) {
+				if (tokens[i] === op) {
+					tokens.splice(i - 1, 3, [op, tokens[i - 1], tokens[i + 1]]);
+					i -= 1;
+				}
+			}
+		});
+		return tokens[0];
+	});
+
+// mutable variable declaration
+rule("declaration", ["var", rule("assignable"), "=", rule("expression")], function (tokens) {
+	return ["var", tokens[1], tokens[3]];
+});
+// Variable can be declared without an initial value, as it can be assigned to later
+rule("declaration", ["var", rule("assignable")], function (tokens) {
+	return [tokens[0], tokens[1]];
+});
+// immutable variable declaration
+rule("declaration", ["let", rule("assignable"), "=", rule("expression")], function (tokens) {
+	return ["let", tokens[1], tokens[3]];
+});
+// single function definition
+rule("declaration", ["def", identifier, rule("function")], function (tokens) {
+	return ["def", tokens[1], tokens[2]];
+});
+// single function definition
+rule("declaration", ["def", identifier, ":", rule("patternBody")], function (tokens) {
+	var patterns = tokens[3];
+	// Verify that the pattern match functions are valid
+	for (var i = 0; i < patterns.length; i++) {
+		if (!(patterns[i] instanceof Array) || patterns[i][0] !== "->") {
+			throw SyntaxError("pattern matched function declaration invalid");
+		}
+	}
+	return ["def", tokens[1], patterns];
+});
+
 // standard variable assignment (x = 5)
 // and list decomposing assignment ([head | tail] = [1, 2, 3])
 rule("assignment", [rule("assignable"), "=", rule("expression")], function (tokens) {
@@ -202,15 +201,21 @@ rule("assignment", [identifier, mutateAssignOp, rule("expression")], function (t
 	return ["=", tokens[0], [subOp, tokens[0], tokens[2]]];
 });
 
+rule("assignable", [rep1(rule("funcAssignable"), ","), rule("funcAssignable")], function (tokens) {
+	var members = tokens.filter(notComma);
+	return ["List"].concat(members);
+});
+rule("assignable", [rule("funcAssignable")]);
+
 // variable
-rule("assignable", [identifier]);
+rule("funcAssignable", [identifier]);
 // list
-rule("assignable", ["[", rep0(identifier, ","), identifier, "]"], function (tokens) {
+rule("funcAssignable", ["[", rep0(identifier, ","), identifier, "]"], function (tokens) {
 	var members = tokens.slice(1, tokens.length - 1).filter(notComma);
 	return ["List"].concat(members);
 });
 // head | tail list
-rule("assignable", ["[", rep0(identifier, ","), identifier, "|", identifier, "]"], 
+rule("funcAssignable", ["[", rep0(identifier, ","), identifier, "|", identifier, "]"], 
 	function (tokens) {
 		var head = tokens.slice(1, tokens.length - 3).filter(notComma);
 		var tail = tokens[tokens.length - 2];
