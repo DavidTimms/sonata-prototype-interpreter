@@ -1,6 +1,5 @@
 var fs = require("fs");
-var List = require("./vm-utils/linked-list.js");
-
+var jitFunction = require("./jit.js");
 var mori = require("mori");
 var list = mori.list;
 var conj = mori.conj;
@@ -78,6 +77,16 @@ function meta (func) {
 var stopIteration = null;
 
 var globalNS = {
+	read_file: function (filename, encoding) {
+		return fs.readFileSync(filename, encoding || "utf8");
+	},
+	read_file_async: function (filename, encoding, callback) {
+		if (typeof encoding === 'function') {
+			callback = encoding;
+			encoding = "utf8";
+		}
+		return fs.readFile(filename, encoding, callback);
+	},
 	print: function () {
 		var s = ([]).join.call(arguments, " ");
 		console.log(s);
@@ -105,6 +114,10 @@ var globalNS = {
 			return !mori.equals(a, b);
 		}
 		return a !== b;
+	},
+	"+": function (a, b) {
+		var res = a + b;
+		return (typeof res === 'number' ? res : NaN);
 	},
 	is_list: mori.is_list,
 	is_seq: mori.is_seq,
@@ -137,19 +150,24 @@ var globalNS = {
 	}),
 	"while": meta(function (condition, body) {
 		var result = false;
+
 		while (evl(condition)) {
+			stack.push(new Scope());
 			result = evl(body);
 			if (result instanceof Message) {
 				if (result.type === "break") {
+					stack.pop();
 					return result.data;
 				}
 				else if (result.type === "next") {
 					result = result.data;
 				}
 				else if (result.type === "return") {
+					stack.pop();
 					return result;
 				}
 			}
+			stack.pop();
 		}
 		return result;
 	}),
@@ -173,13 +191,13 @@ var globalNS = {
 		while ((value = nextVal()) !== stopIteration) {
 			// create loop scope
 			var loopScope = new Scope();
+			stack.push(loopScope);
 			loopScope[valueName] = value;
 			if (indexName) {
 				// set named array index
 				loopScope[indexName] = index;
 				index += 1;
 			}
-			stack.push(loopScope);
 			result = evl(body);
 			if (result instanceof Message) {
 				if (result.type === "break") {
@@ -248,6 +266,8 @@ var globalNS = {
 			return result;
 		};
 		func.closure = cloneArray(stack);
+		func.argNames = argNames;
+		func.bodyExpression = body;
 		return func;
 	}),
 	"List": list,
@@ -291,6 +311,18 @@ var globalNS = {
 			return true;
 		}
 	}),
+	jit_function: function (baseFunc) {
+		try {
+			var funcSource = jitFunction(baseFunc);
+			var jittedFunc = eval(funcSource);
+			jittedFunc.closure = baseFunc.closure;
+			return jittedFunc;
+		}
+		catch (e) {
+			console.log("failed to evaluate jit function source");
+			return baseFunc;
+		}
+	},
 	print_stack: function () {
 		console.log("MEMORY STACK");
 		for (var i = stack.length - 1; i >= 0; i--) {
@@ -313,6 +345,15 @@ var globalNS = {
 		return function () {
 			return Date.now() - start;
 		}
+	},
+	primesInnerLoop: function () {
+		while (getVal("primes") !== getVal("empty") && !getVal("result")) {
+			if ((getVal("i") % getVal("first")(getVal("primes"))) === 0) {
+				setVal("result", true);
+			}
+			var result = setVal("primes", getVal("rest")(getVal("primes")));
+		}
+		return result;
 	}
 };
 
@@ -320,7 +361,7 @@ var globalNS = {
 globalNS["def"] = globalNS["let"];
 
 // Generate functions for the basic arithmetic and logically operations
-["+", "-", "*", "/", "%", "<", ">", ">=", "<="].forEach(function (op) {
+["-", "*", "/", "%", "<", ">", ">=", "<="].forEach(function (op) {
 	var body = "return a " + op + " b";
 	globalNS[op] = new Function("a", "b", body);
 });
@@ -339,11 +380,16 @@ function Scope () {
 	this.$immutable = {};
 }
 
+function throwError(msg) {
+
+}
+
 var currentFunction, tailCall = false;
 
 function getVal (identifier) {
 	for (var i = stack.length - 1; i >= 0; i--) {
-		if (stack[i].hasOwnProperty(identifier)) {
+//		if (stack[i].hasOwnProperty(identifier)) {
+		if (stack[i][identifier] !== undefined) {
 			return stack[i][identifier];
 		}
 	}
@@ -353,7 +399,7 @@ function getVal (identifier) {
 function setVal (identifier, val) {
 	// move down the stack until the variable is found then assign to it
 	for (var i = stack.length - 1; i >= 0; i--) {
-		if (stack[i].hasOwnProperty(identifier)) {
+		if (stack[i][identifier] !== undefined) {
 			if (stack[i].$immutable[identifier]) {
 				throw Error("The variable " + identifier + 
 					" is immutable and cannot be assigned to");
@@ -368,7 +414,7 @@ function setVal (identifier, val) {
 
 function decomposeList (lefts, rights, options) {
 	options.dontEval = true;
-	if (rights !== undefined) {
+	if (rights !== null) {
 		for (i = 0; i < lefts.length; i++) {
 			assignVariable(lefts[i], first(rights), options);
 			rights = rest(rights) || list();
@@ -376,7 +422,7 @@ function decomposeList (lefts, rights, options) {
 	}
 	else {
 		for (i = 0; i < lefts.length; i++) {
-			assignVariable(lefts[i], undefined, options);
+			assignVariable(lefts[i], null, options);
 		}
 	}
 	return rights;
@@ -385,8 +431,11 @@ function decomposeList (lefts, rights, options) {
 function assignVariable (left, right, options) {
 	options = options || {};
 	var i, declaration = options.declaration;
-	var result = (right === undefined  || options.dontEval) ? right : evl(right);
 	var topScope = stack[stack.length - 1];
+	var result = null;
+	if (right !== undefined) {
+		result = (options.dontEval ? right : evl(right));
+	}
 
 	// destructuring list assignment 
 	if (left instanceof Array) {
@@ -422,92 +471,88 @@ function assignVariable (left, right, options) {
 
 // Main function for evaluating an expression
 function evl (exp, inTailPosition) {
-	if (exp instanceof Array) {
-		//out("evaluating " + lispify(exp));
-		// evaluate block expressions in tern and return the last
-		if (exp[0] === "do") {
-			stack.push(new Scope());
-			var result;
-			// evaluate each expression in the block
-			for (var i = 1; i < exp.length - 1; i++) {
-				result = evl(exp[i]);
-				if (result instanceof Message) {
-					stack.pop();
-					return result;
-				}
-			}
-			result = evl(exp[i], inTailPosition);
-			stack.pop();
-			return result;
-		}
-		else {
-			var args, func = evl(exp[0]);
-			if (func.isMeta) {
-				// special case for "if" to add tail position flag
-				if(exp[0] === "if" && inTailPosition) {
-					return func(exp[1], exp[2], exp[3], inTailPosition);
-				}
-
-				// apply the unevaluated arguments to the meta-function
-				switch (exp.length) {
-					case 1:  return func();
-					case 2:  return func(exp[1]);
-					case 3:  return func(exp[1], exp[2]);
-					case 4:  return func(exp[1], exp[2], exp[3]);
-					case 5:  return func(exp[1], exp[2], exp[3], exp[4]);
-					case 6:  return func(exp[1], exp[2], exp[3], exp[4], exp[6]);
-					default: return func.apply(null, exp.slice(1));
-				}
-			}
-			else {
-				if (inTailPosition) {
-					// return arguments for tail call
-					if (func === currentFunction) {
-						// evaluate each argument
-						args = [];
-						for (var i = 1; i < exp.length; i++) {
-							args.push(evl(exp[i]));
-						}
-						return new Message("tailCall", args);
+	switch (typeof exp) {
+		case "object":
+			//out("evaluating " + lispify(exp));
+			// evaluate block expressions in tern and return the last
+			if (exp[0] === "do") {
+				var result;
+				// evaluate each expression in the block
+				for (var i = 1; i < exp.length - 1; i++) {
+					result = evl(exp[i]);
+					if (result instanceof Message) {
+						return result;
 					}
 				}
-				// call the function
-				if (typeof func !== 'function') {
-					console.log("not a function: ", func);
-					console.log("in expression: ", exp);
-					process.exit();
+				result = evl(exp[i], inTailPosition);
+				return result;
+			}
+			else {
+				var func = evl(exp[0]);
+				if (func.isMeta) {
+					// special case for "if" to add tail position flag
+					if(exp[0] === "if" && inTailPosition) {
+						return func(exp[1], exp[2], exp[3], inTailPosition);
+					}
+
+					// apply the unevaluated arguments to the meta-function
+					switch (exp.length) {
+						case 1:  return func();
+						case 2:  return func(exp[1]);
+						case 3:  return func(exp[1], exp[2]);
+						case 4:  return func(exp[1], exp[2], exp[3]);
+						case 5:  return func(exp[1], exp[2], exp[3], exp[4]);
+						case 6:  return func(exp[1], exp[2], exp[3], exp[4], exp[6]);
+						default: return func.apply(null, exp.slice(1));
+					}
 				}
-				// evaluate the arguments and apply them to the function
-				switch (exp.length) {
-					case 1:  return func();
-					case 2:  return func(evl(exp[1]));
-					case 3:  return func(evl(exp[1]), evl(exp[2]));
-					case 4:  return func(evl(exp[1]), evl(exp[2]), 
-						evl(exp[3]));
-					case 5:  return func(evl(exp[1]), evl(exp[2]), 
-						evl(exp[3]), evl(exp[4]));
-					case 6:  return func(evl(exp[1]), evl(exp[2]), 
-						evl(exp[3]), evl(exp[4]), evl(exp[5]));
-					default: return func.apply(null, exp.slice(1));
+				else {
+					if (inTailPosition) {
+						// return arguments for tail call
+						if (func === currentFunction) {
+							var args = [];
+							// evaluate each argument
+							for (var i = 1; i < exp.length; i++) {
+								args.push(evl(exp[i]));
+							}
+							return new Message("tailCall", args);
+						}
+					}
+					// call the function
+					if (typeof func !== 'function') {
+						console.log("not a function: ", func);
+						console.log("in expression: ", exp);
+						process.exit();
+					}
+					// evaluate the arguments and apply them to the function
+					switch (exp.length) {
+						case 1:  return func();
+						case 2:  return func(evl(exp[1]));
+						case 3:  return func(evl(exp[1]), evl(exp[2]));
+						case 4:  return func(evl(exp[1]), evl(exp[2]), 
+							evl(exp[3]));
+						case 5:  return func(evl(exp[1]), evl(exp[2]), 
+							evl(exp[3]), evl(exp[4]));
+						case 6:  return func(evl(exp[1]), evl(exp[2]), 
+							evl(exp[3]), evl(exp[4]), evl(exp[5]));
+						default: return func.apply(null, exp.slice(1).map(function (ex) {
+							return evl(ex);
+						}));
+					}
 				}
 			}
-				
-		}
-	}
-	// boolean literals
-	else if (exp === true || exp === false) {
-		return exp;
-	}
-	// number literals
-	else if (typeof exp === "number") {
+		case "string":
+			// string literals
+			if (exp.charAt(0) === "'") {
+				return exp.substr(1, exp.length - 2);
+			}
+			// dereference variables
+			else {
+				return getVal(exp);
+			}
+		default:
+			// number or boolean literal remains unchanged
 			return exp;
 	}
-	// string literals
-	else if (exp.charAt(0) === "'") {
-		return exp.substr(1, exp.length - 2);
-	}
-	// dereference variables
-	else {
-		return getVal(exp);
-	}
 }
+

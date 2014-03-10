@@ -1,0 +1,14 @@
+
+let label = '\nMy source: \n'
+read_file_async('tests/io.son', (error, input) ->
+	print('"i" occurs ' ++ count_char('i', input, 0) ++ 
+		' times in my source code')
+)
+
+def count_char (ch, [h | t], total) ->
+	if t == []: total
+	else: 
+		let new_total = if h == ch: total + 1 else: total
+		count_char(ch, t, new_total)
+
+'waiting...'

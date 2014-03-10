@@ -2,16 +2,17 @@
 let a = ->
     var primeNumbers = []
     var i = 1
-    while i < 1000:
+    while i < 10000:
         if !(i % 100): print(i)
         i = i + 1
         var result = false
         var primes = primeNumbers
         var number
-        while primes && !result:
-            [number|primes] = primes
-            if i % number == 0: 
+        let empty = []
+        while primes != empty && !result:
+            if i % first(primes) == 0: 
                 result = true
+            primes = rest(primes)
 
         if !result:
             primeNumbers = [i|primeNumbers]
@@ -22,5 +23,5 @@ print('Sonata')
 print('======')
 let elapsed = timer()
 let resp = a()
-print(elapsed())
+print(elapsed() ++ "ms")
 length(resp)
