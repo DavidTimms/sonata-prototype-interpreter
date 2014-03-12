@@ -163,6 +163,20 @@ var forLoop = meta(function (loopVar, collection, body) {
 	return arrayToList(results);
 });
 
+function equal (a, b) {
+	if (isMori(a) && isMori(b)) {
+		return mori.equals(a, b);
+	}
+	return a === b;
+}
+
+function notEqual (a, b) {
+	if (isMori(a) && isMori(b)) {
+		return !mori.equals(a, b);
+	}
+	return a !== b;
+}
+
 var stopIteration = null;
 
 var globalNS = {
@@ -192,18 +206,8 @@ var globalNS = {
 		return evaluated;
 	}),
 	"=": meta(assignVariable),
-	"==": function (a, b) {
-		if (isMori(a) && isMori(b)) {
-			return mori.equals(a, b);
-		}
-		return a === b;
-	},
-	"!=": function (a, b) {
-		if (isMori(a) && isMori(b)) {
-			return !mori.equals(a, b);
-		}
-		return a !== b;
-	},
+	"==": equal,
+	"!=": notEqual,
 	"+": sonataAdd,
 	is_list: mori.is_list,
 	is_seq: mori.is_seq,
@@ -324,7 +328,7 @@ var globalNS = {
 		try {
 			var funcSource = jitFunction(baseFunc);
 			if (!funcSource) return baseFunc;
-			console.log(funcSource);
+			//console.log(funcSource);
 			var jittedFunc = eval(funcSource);
 			jittedFunc.closure = baseFunc.closure;
 			return jittedFunc;

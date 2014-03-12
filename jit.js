@@ -37,6 +37,7 @@ function safelyEval (exp) {
 		return jitEval(exp);
 	}
 	catch (e) {
+		console.log(e);
 		return false;
 	}
 }
@@ -67,11 +68,6 @@ function jitEval (exp) {
 			}
 
 			if (func && func !== "meta function") {
-				if (exp[0] === "while") {
-					return safelyEval(exp) || "whileLoop(" + args.map(function (arg) {
-						return JSON.stringify(arg);
-					}).join(", ") + ")";
-				}
 				// evaluate the arguments and apply them to the function
 				return func.apply(null, args);
 			}
@@ -136,17 +132,23 @@ var jitExpression = {
 	"break": fail,
 	"continue": fail,
 	"while": function (condition, body) {
-		var loop = "(function () {\nvar _returnValue = false;\n"
-			+ "while (" + jitEval(condition) + ") {\n"
-			+ "stack.push(new Scope());\n";
-		for (var i = 1; i < body.length - 1; i++) {
-			loop += jitEval(body[i]) + ";\n";
-			// TODO: implement breakout messages
+		try {
+			var loop = "(function () {\nvar _returnValue = false;\n"
+				+ "while (" + jitEval(condition) + ") {\n"
+				+ "stack.push(new Scope());\n";
+			for (var i = 1; i < body.length - 1; i++) {
+				loop += jitEval(body[i]) + ";\n";
+				// TODO: implement breakout messages
+			}
+			loop += "_returnValue = " + jitEval(body[i]) + ";\n";
+			loop += "stack.pop();\n"
+				+ "}\nreturn _returnValue;\n}())";
+			return loop;
 		}
-		loop += "_returnValue = " + jitEval(body[i]) + ";\n";
-		loop += "stack.pop();\n"
-			+ "}\nreturn _returnValue;\n}())";
-		return loop;
+		catch (e) {
+			return "whileLoop(" + JSON.stringify(condition)
+				+ ", " + JSON.stringify(body) + ")";
+		}
 	},
 	"for": alias("forLoop"),
 	"=": function (identifier, val) {
@@ -156,6 +158,8 @@ var jitExpression = {
 	"+": function (a, b) {
 		return "sonataAdd(" + a + ", " + b + ")";
 	},
+	"==": alias("equal"),
+	"!=": alias("notEqual"),
 	"List": alias("list"),
 	"List:compose": alias("listCompose")
 };
