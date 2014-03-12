@@ -1,9 +1,14 @@
 
-var x = 45
+var x = 19
 
 def add_x (y) ->
+	while x > 8:
+		if (x > 4):
+			x -= 1
+			print(x)
 	if true:
-		print(x + y * 23)
+		ensure(45 != 34)
+		x + y * 23
 
 let jit_add_x = jit_function(add_x)
 
@@ -11,7 +16,6 @@ var i = 0
 var elapsed = timer()
 while i < 100:
 	jit_add_x(i)
-	add_x(i)
 	i += 1
 
 elapsed() ++ "ms"

@@ -1,5 +1,6 @@
 var fs = require("fs");
-var jitFunction = require("./jit.js");
+var jit = require("./jit.js");
+var jitFunction = jit.jitFunction;
 var mori = require("mori");
 var list = mori.list;
 var conj = mori.conj;
@@ -74,6 +75,94 @@ function meta (func) {
 	return func;
 }
 
+function listCompose (heads, tail) {
+	if (!isSeq(tail)) {
+		throw Error("tail of a list must be a list, but found " + tail);
+	}
+	var newList = tail;
+	for (var i = heads.length - 1; i >= 0; i--) {
+		newList = cons(heads[i], newList);
+	}
+	return newList;
+}
+
+function sonataAdd (a, b) {
+	var res = a + b;
+	return (typeof res === 'number' ? res : NaN);
+}
+
+var whileLoop = meta(function (condition, body) {
+	var result = false;
+
+	while (evl(condition)) {
+		stack.push(new Scope());
+		result = evl(body);
+		if (result instanceof Message) {
+			if (result.type === "break") {
+				stack.pop();
+				return result.data;
+			}
+			else if (result.type === "next") {
+				result = result.data;
+			}
+			else if (result.type === "return") {
+				stack.pop();
+				return result;
+			}
+		}
+		stack.pop();
+	}
+	return result;
+});
+
+var forLoop = meta(function (loopVar, collection, body) {
+	var result;
+	var results = [];
+	var items = evl(collection);
+	var nextVal = (typeof items === 'function' ? items : iterate(items));
+	var indexName, valueName;
+	var value;
+	var index = 0;
+	if (loopVar instanceof Array) {
+		// index and value named
+		indexName = loopVar[0];
+		valueName = loopVar[1];
+	}
+	else {
+		// just value named
+		valueName = loopVar;
+	}
+	while ((value = nextVal()) !== stopIteration) {
+		// create loop scope
+		var loopScope = new Scope();
+		stack.push(loopScope);
+		loopScope[valueName] = value;
+		if (indexName) {
+			// set named array index
+			loopScope[indexName] = index;
+			index += 1;
+		}
+		result = evl(body);
+		if (result instanceof Message) {
+			if (result.type === "break") {
+				results.push(result.data);
+				stack.pop();
+				break;
+			}
+			else if (result.type === "return") {
+				stack.pop();
+				return result.data;
+			}
+			else if (result.type === "next") {
+				result = result.data;
+			}
+		}
+		results.push(result);
+		stack.pop();
+	}
+	return arrayToList(results);
+});
+
 var stopIteration = null;
 
 var globalNS = {
@@ -115,10 +204,7 @@ var globalNS = {
 		}
 		return a !== b;
 	},
-	"+": function (a, b) {
-		var res = a + b;
-		return (typeof res === 'number' ? res : NaN);
-	},
+	"+": sonataAdd,
 	is_list: mori.is_list,
 	is_seq: mori.is_seq,
 	"!": function (a) {
@@ -148,76 +234,8 @@ var globalNS = {
 		}
 		return false;
 	}),
-	"while": meta(function (condition, body) {
-		var result = false;
-
-		while (evl(condition)) {
-			stack.push(new Scope());
-			result = evl(body);
-			if (result instanceof Message) {
-				if (result.type === "break") {
-					stack.pop();
-					return result.data;
-				}
-				else if (result.type === "next") {
-					result = result.data;
-				}
-				else if (result.type === "return") {
-					stack.pop();
-					return result;
-				}
-			}
-			stack.pop();
-		}
-		return result;
-	}),
-	"for": meta(function (loopVar, collection, body) {
-		var result;
-		var results = [];
-		var items = evl(collection);
-		var nextVal = (typeof items === 'function' ? items : iterate(items));
-		var indexName, valueName;
-		var value;
-		var index = 0;
-		if (loopVar instanceof Array) {
-			// index and value named
-			indexName = loopVar[0];
-			valueName = loopVar[1];
-		}
-		else {
-			// just value named
-			valueName = loopVar;
-		}
-		while ((value = nextVal()) !== stopIteration) {
-			// create loop scope
-			var loopScope = new Scope();
-			stack.push(loopScope);
-			loopScope[valueName] = value;
-			if (indexName) {
-				// set named array index
-				loopScope[indexName] = index;
-				index += 1;
-			}
-			result = evl(body);
-			if (result instanceof Message) {
-				if (result.type === "break") {
-					results.push(result.data);
-					stack.pop();
-					break;
-				}
-				else if (result.type === "return") {
-					stack.pop();
-					return result.data;
-				}
-				else if (result.type === "next") {
-					result = result.data;
-				}
-			}
-			results.push(result);
-			stack.pop();
-		}
-		return arrayToList(results);
-	}),
+	"while": whileLoop,
+	"for": forLoop,
 	"break": function (value) {
 		return new Message("break", value);
 	},
@@ -271,16 +289,7 @@ var globalNS = {
 		return func;
 	}),
 	"List": list,
-	"List:compose": meta(function (heads, tail) {
-		var newList = evl(tail);
-		if (!isSeq(newList)) {
-			throw Error("tail of a list must be a list. Variable '" + tail + "' is not.");
-		}
-		for (var i = heads.length - 1; i >= 0; i--) {
-			newList = cons(evl(heads[i]), newList);
-		}
-		return newList;
-	}),
+	"List:compose": listCompose,
 	first: mori.first,
 	rest: mori.rest,
 	length: mori.count,
@@ -314,11 +323,14 @@ var globalNS = {
 	jit_function: function (baseFunc) {
 		try {
 			var funcSource = jitFunction(baseFunc);
+			if (!funcSource) return baseFunc;
+			console.log(funcSource);
 			var jittedFunc = eval(funcSource);
 			jittedFunc.closure = baseFunc.closure;
 			return jittedFunc;
 		}
 		catch (e) {
+			console.log(e);
 			console.log("failed to evaluate jit function source");
 			return baseFunc;
 		}
@@ -345,15 +357,6 @@ var globalNS = {
 		return function () {
 			return Date.now() - start;
 		}
-	},
-	primesInnerLoop: function () {
-		while (getVal("primes") !== getVal("empty") && !getVal("result")) {
-			if ((getVal("i") % getVal("first")(getVal("primes"))) === 0) {
-				setVal("result", true);
-			}
-			var result = setVal("primes", getVal("rest")(getVal("primes")));
-		}
-		return result;
 	}
 };
 
@@ -365,6 +368,14 @@ globalNS["def"] = globalNS["let"];
 	var body = "return a " + op + " b";
 	globalNS[op] = new Function("a", "b", body);
 });
+
+(function () {
+	for (var key in globalNS) {
+		if (globalNS[key].isMeta) {
+			jit.registerMetaFunction(key);
+		}
+	}
+})();
 
 // create initial stack
 var topLevel = new Scope();
