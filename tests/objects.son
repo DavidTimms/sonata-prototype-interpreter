@@ -1,0 +1,7 @@
+
+let dict = Dict()
+
+dict('name', 'Dave')
+dict('age', 21)
+
+dict('name') & ' is ' & dict('age')

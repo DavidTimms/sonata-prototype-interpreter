@@ -223,11 +223,17 @@ var globalNS = {
 	"^": function (a, b) {
 		return Math.pow(a, b);
 	},
-	"++": function (a, b) {
-		if (isSeq(a) && isSeq(b)) {
-			return mori.concat(a, b);
-		}
+	"&": function (a, b) {
 		return ("" + a) + b;
+	},
+	"++": function (a, b) {
+		if (!isSeq(a)) {
+			a = list(a);
+		}
+		if (!isSeq(b)) {
+			b = list(b);
+		}
+		return mori.concat(a, b);
 	},
 	"if": meta(function (condition, ifBody, elseBody, inTailPosition) {
 		if (evl(condition)) {
@@ -308,6 +314,25 @@ var globalNS = {
 		return function () {
 			return ((curr += step) === to ? null : curr); 
 		}
+	},
+	"Dict": function () {
+		var dict = {};
+		var dictFunc = function (key, value) {
+			if (arguments.length === 2) {
+				dict[key] = value;
+				return dictFunc;
+			}
+			else {
+				return dict[key];
+			}
+		};
+		dictFunc.toJSON = function () {
+			return JSON.stringify(dict);
+		}
+		return dictFunc;
+	},
+	"to_json": function (dict) {
+		return dict.toJSON();
 	},
 	ensure: meta(function (expression) {
 		if (!evl(expression)) {

@@ -17,7 +17,7 @@ function printJSON (obj) {
 
 // binary operator predicate returns true if 
 // str is a valid binary operator
-var operators = ("^ ++ * / % + - >= <= == != > < && ||").split(" ");
+var operators = ("^ * / % + - ++ & >= <= == != > < && ||").split(" ");
 var operator = (function () {
 	var opSet = buildTokenSet(operators.join(" "));
 	mergeLines.opSet = opSet;
